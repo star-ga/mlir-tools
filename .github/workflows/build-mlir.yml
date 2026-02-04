@@ -1,0 +1,121 @@
+name: Build MLIR Tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_version:
+        description: 'LLVM version tag (e.g., llvmorg-18.1.8)'
+        required: true
+        default: 'llvmorg-18.1.8'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            platform: linux-x64
+            cmake_extra: ""
+          - os: ubuntu-24.04-arm64
+            platform: linux-arm64
+            cmake_extra: ""
+          - os: windows-2022
+            platform: windows-x64
+            cmake_extra: "-DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl"
+          - os: macos-14
+            platform: macos-arm64
+            cmake_extra: ""
+          - os: macos-13
+            platform: macos-x64
+            cmake_extra: ""
+
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout LLVM
+        uses: actions/checkout@v4
+        with:
+          repository: llvm/llvm-project
+          ref: ${{ inputs.llvm_version }}
+          sparse-checkout: |
+            llvm
+            mlir
+          sparse-checkout-cone-mode: false
+
+      - name: Setup MSVC (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v5
+
+      - name: Configure MLIR
+        run: |
+          cmake -G Ninja -B build -S llvm \
+            -DLLVM_ENABLE_PROJECTS="mlir" \
+            -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_BUILD_TESTS=OFF \
+            -DMLIR_BUILD_MLIR_C_DYLIB=OFF \
+            ${{ matrix.cmake_extra }}
+
+      - name: Build MLIR Tools
+        run: |
+          cmake --build build --target mlir-opt mlir-translate -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
+
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p mlir-${{ matrix.platform }}/bin
+          cp build/bin/mlir-opt mlir-${{ matrix.platform }}/bin/
+          cp build/bin/mlir-translate mlir-${{ matrix.platform }}/bin/
+          tar czf mlir-${{ matrix.platform }}.tar.gz mlir-${{ matrix.platform }}
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path mlir-${{ matrix.platform }}/bin
+          Copy-Item build/bin/mlir-opt.exe mlir-${{ matrix.platform }}/bin/
+          Copy-Item build/bin/mlir-translate.exe mlir-${{ matrix.platform }}/bin/
+          Compress-Archive -Path mlir-${{ matrix.platform }} -DestinationPath mlir-${{ matrix.platform }}.zip
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir-${{ matrix.platform }}
+          path: mlir-${{ matrix.platform }}.*
+          retention-days: 90
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.llvm_version }}
+          name: MLIR Tools (${{ inputs.llvm_version }})
+          body: |
+            Pre-built MLIR tools for MIND compiler.
+            
+            Contains:
+            - `mlir-opt` - MLIR optimizer
+            - `mlir-translate` - MLIR to LLVM IR translator
+            
+            Built from LLVM ${{ inputs.llvm_version }}
+          files: |
+            artifacts/**/*
+          fail_on_unmatched_files: false
