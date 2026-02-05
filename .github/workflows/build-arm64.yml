@@ -1,0 +1,52 @@
+name: Build Linux ARM64 Only
+
+on:
+  workflow_dispatch:
+    inputs:
+      llvm_version:
+        description: 'LLVM version tag'
+        required: true
+        default: 'llvmorg-18.1.8'
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 240
+
+    steps:
+      - name: Checkout LLVM
+        uses: actions/checkout@v4
+        with:
+          repository: llvm/llvm-project
+          ref: ${{ inputs.llvm_version }}
+
+      - name: Install Ninja
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure MLIR
+        run: |
+          cmake -G Ninja -B build -S llvm \
+            -DLLVM_ENABLE_PROJECTS="mlir" \
+            -DLLVM_TARGETS_TO_BUILD="AArch64" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DLLVM_ENABLE_ASSERTIONS=OFF \
+            -DLLVM_BUILD_EXAMPLES=OFF \
+            -DLLVM_BUILD_TESTS=OFF \
+            -DMLIR_BUILD_MLIR_C_DYLIB=OFF
+
+      - name: Build MLIR Tools
+        run: cmake --build build --target mlir-opt mlir-translate -j$(nproc)
+
+      - name: Package
+        run: |
+          mkdir -p mlir-linux-arm64/bin
+          cp build/bin/mlir-opt mlir-linux-arm64/bin/
+          cp build/bin/mlir-translate mlir-linux-arm64/bin/
+          tar czf mlir-linux-arm64.tar.gz mlir-linux-arm64
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlir-linux-arm64
+          path: mlir-linux-arm64.tar.gz
+          retention-days: 90
