@@ -4,127 +4,144 @@ on:
   workflow_dispatch:
     inputs:
       llvm_version:
-        description: 'LLVM version tag (e.g., llvmorg-18.1.8)'
+        description: 'LLVM version to build; must be pinned in versions.txt (e.g. 23.1.3)'
         required: true
-        default: 'llvmorg-18.1.8'
+        default: '23.1.3'
+      platforms:
+        description: 'Comma-separated platforms (linux-x64,linux-arm64,macos-x64,macos-arm64,windows-x64) or "all"'
+        required: true
+        default: 'all'
+      release:
+        description: 'Publish a GitHub release (only when platforms is "all")'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
 
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+      version: ${{ steps.version.outputs.version }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MLIR_TOOLS_ATTESTATION: auto
+      LLVM_VERSION: ${{ inputs.llvm_version }}
+      PLATFORMS: ${{ inputs.platforms }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Normalize version
+        id: version
+        run: |
+          v="${LLVM_VERSION#llvmorg-}"
+          case "$v" in *[!0-9.]*|"") echo "invalid LLVM version: $LLVM_VERSION"; exit 1 ;; esac
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Verify the pinned LLVM source release
+        run: ./scripts/build-mlir-tools.sh --version "$LLVM_VERSION" --workdir w --verify-only
+
+      - name: Select platforms
+        id: matrix
+        run: |
+          all='[
+            {"platform":"linux-x64","os":"ubuntu-22.04"},
+            {"platform":"linux-arm64","os":"ubuntu-22.04-arm"},
+            {"platform":"macos-x64","os":"macos-15-intel"},
+            {"platform":"macos-arm64","os":"macos-15"},
+            {"platform":"windows-x64","os":"windows-2025"}
+          ]'
+          if [ "$PLATFORMS" = all ]; then
+            selected="$all"
+          else
+            wanted="$(printf '%s' "$PLATFORMS" | tr -d ' ' | jq -R -c 'split(",") | map(select(length > 0))')"
+            unknown="$(jq -n -c --argjson all "$all" --argjson w "$wanted" '$w - [$all[].platform]')"
+            [ "$unknown" = "[]" ] || { echo "unknown platform(s): $unknown"; exit 1; }
+            selected="$(jq -n -c --argjson all "$all" --argjson w "$wanted" '[$all[] | select(.platform as $p | $w | index($p))]')"
+          fi
+          [ "$(jq length <<<"$selected")" -gt 0 ] || { echo "no platforms selected"; exit 1; }
+          echo "matrix=$(jq -c '{include: .}' <<<"$selected")" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: plan
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            platform: linux-x64
-          - os: ubuntu-24.04-arm
-            platform: linux-arm64
-          - os: windows-2022
-            platform: windows-x64
-          - os: macos-14
-            platform: macos-arm64
-          - os: macos-15
-            platform: macos-x64
-
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 240
-
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MLIR_TOOLS_ATTESTATION: auto
+      LLVM_VERSION: ${{ needs.plan.outputs.version }}
     steps:
-      - name: Checkout LLVM
-        uses: actions/checkout@v4
-        with:
-          repository: llvm/llvm-project
-          ref: ${{ inputs.llvm_version }}
+      - uses: actions/checkout@v7
 
-      - name: Setup MSVC (Windows)
+      - name: Set up MSVC (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
 
       - name: Install Ninja (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ninja-build
+        run: command -v ninja || { sudo apt-get update && sudo apt-get install -y ninja-build; }
 
-      - name: Install Ninja (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ninja
+      - name: Fetch, verify and build
+        shell: bash
+        run: ./scripts/build-mlir-tools.sh --version "$LLVM_VERSION" --platform "${{ matrix.platform }}" --workdir w --outdir dist
 
-      - name: Install Ninja (Windows)
-        if: runner.os == 'Windows'
-        uses: seanmiddleditch/gha-setup-ninja@v5
-
-      - name: Configure MLIR (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          cmake -G Ninja -B build -S llvm \
-            -DLLVM_ENABLE_PROJECTS="mlir" \
-            -DLLVM_TARGETS_TO_BUILD="X86;AArch64" \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DLLVM_ENABLE_ASSERTIONS=OFF \
-            -DLLVM_BUILD_EXAMPLES=OFF \
-            -DLLVM_BUILD_TESTS=OFF \
-            -DMLIR_BUILD_MLIR_C_DYLIB=OFF
-
-      - name: Configure MLIR (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cmake -G Ninja -B build -S llvm -DLLVM_ENABLE_PROJECTS="mlir" -DLLVM_TARGETS_TO_BUILD="X86;AArch64" -DCMAKE_BUILD_TYPE=Release -DLLVM_ENABLE_ASSERTIONS=OFF -DLLVM_BUILD_EXAMPLES=OFF -DLLVM_BUILD_TESTS=OFF -DMLIR_BUILD_MLIR_C_DYLIB=OFF -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl
-
-      - name: Build MLIR Tools (Unix)
-        if: runner.os != 'Windows'
-        run: cmake --build build --target mlir-opt mlir-translate -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
-
-      - name: Build MLIR Tools (Windows)
-        if: runner.os == 'Windows'
-        run: cmake --build build --target mlir-opt mlir-translate -j $env:NUMBER_OF_PROCESSORS
-
-      - name: Package (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          mkdir -p mlir-${{ matrix.platform }}/bin
-          cp build/bin/mlir-opt mlir-${{ matrix.platform }}/bin/
-          cp build/bin/mlir-translate mlir-${{ matrix.platform }}/bin/
-          tar czf mlir-${{ matrix.platform }}.tar.gz mlir-${{ matrix.platform }}
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path mlir-${{ matrix.platform }}/bin
-          Copy-Item build/bin/mlir-opt.exe mlir-${{ matrix.platform }}/bin/
-          Copy-Item build/bin/mlir-translate.exe mlir-${{ matrix.platform }}/bin/
-          Compress-Archive -Path mlir-${{ matrix.platform }} -DestinationPath mlir-${{ matrix.platform }}.zip
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
         with:
           name: mlir-${{ matrix.platform }}
-          path: mlir-${{ matrix.platform }}.*
+          path: dist/*
+          if-no-files-found: error
           retention-days: 90
 
   release:
-    needs: build
-    runs-on: ubuntu-latest
+    needs: [plan, build]
+    # A release always carries every platform, so its SHA256SUMS covers the full set.
+    # Runs for a subset of platforms only upload workflow artifacts.
+    if: inputs.release && inputs.platforms == 'all'
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
-
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
         with:
-          path: artifacts
+          path: dist
+          merge-multiple: true
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v2
+      - name: Write SHA256SUMS
+        working-directory: dist
+        run: |
+          cat mlir-*.sha256 > SHA256SUMS
+          rm mlir-*.sha256
+          sha256sum -c SHA256SUMS
+
+      - name: Attest build provenance
+        uses: actions/attest@v4
         with:
-          tag_name: ${{ inputs.llvm_version }}
-          name: MLIR Tools (${{ inputs.llvm_version }})
+          subject-path: 'dist/mlir-*'
+
+      - name: Create release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: llvmorg-${{ needs.plan.outputs.version }}
+          name: MLIR Tools (llvmorg-${{ needs.plan.outputs.version }})
           body: |
-            Pre-built MLIR tools for MIND compiler.
-            
-            Contains:
-            - `mlir-opt` - MLIR optimizer
-            - `mlir-translate` - MLIR to LLVM IR translator
-            
-            Built from LLVM ${{ inputs.llvm_version }}
+            `mlir-opt` and `mlir-translate` built from the signed LLVM ${{ needs.plan.outputs.version }} source release
+            (`llvm-project-${{ needs.plan.outputs.version }}.src.tar.xz`, pinned in `versions.txt`).
+
+            Verify a download:
+
+                sha256sum -c SHA256SUMS --ignore-missing
+                gh attestation verify mlir-linux-x64.tar.gz --repo ${{ github.repository }}
           files: |
-            artifacts/**/*
-          fail_on_unmatched_files: false
+            dist/mlir-*
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true
