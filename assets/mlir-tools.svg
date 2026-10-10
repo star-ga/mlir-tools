@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" class="eco-mlir-tools" role="img" aria-label="MLIR Tools">
+<title>MLIR Tools</title>
+<style>
+.eco-mlir-tools{--i:oklch(0.50 0.20 277);--s:oklch(0.955 0.035 277)}
+@media (prefers-color-scheme:dark){.eco-mlir-tools{--i:oklch(0.80 0.12 277);--s:oklch(0.28 0.06 277)}}
+.dark .eco-mlir-tools{--i:oklch(0.80 0.12 277);--s:oklch(0.28 0.06 277)}
+.eco-mlir-tools .b{fill:var(--eco-language-surface,var(--s));stroke:var(--eco-language-ink,var(--i));stroke-opacity:.18}
+.eco-mlir-tools .g{fill:none;stroke:var(--eco-language-ink,var(--i));stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.eco-mlir-tools .d{stroke-dasharray:2 2.75}
+.eco-mlir-tools .a{fill:var(--eco-language-ink,var(--i))}
+.eco-mlir-tools .k{fill:none;stroke:var(--eco-language-surface,var(--s));stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round}
+</style>
+<rect class="b" x=".5" y=".5" width="23" height="23" rx="5.5"/>
+  <path class="g" d="M5 6.5h7"/>
+  <path class="g" d="M8.5 12h7"/>
+  <path class="g" d="M12 17.5h4"/>
+  <path class="g" d="M12 6.5v2.5M15.5 12v2.5"/>
+  <path class="a" d="M16.5 15.75h2.25a1 1 0 0 1 1 1v1.5a1 1 0 0 1-1 1H16.5z"/>
+</svg>
