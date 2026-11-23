@@ -193,6 +193,12 @@ else. The native backend uses none of these tools. See
 [MLIR Lowering](https://mindlang.dev/docs/mlir) and the
 [MIND install guide](https://github.com/star-ga/mind/blob/main/docs/install.md).
 
+## Community
+
+- **Discussions:** <https://github.com/star-ga/mind/discussions> — questions,
+  ideas and help for mlir-tools and the wider MIND ecosystem.
+- **Discord:** <https://mindlang.dev/discord> — the MindLang community server.
+
 ## License
 
 `mlir-opt`, `mlir-translate`, and LLVM itself are part of the LLVM Project,
