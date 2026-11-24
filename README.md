@@ -16,23 +16,23 @@ script that you can run yourself.
   MLIR, LLVM or clang involved, so it needs nothing from this repository. The
   MLIR backend is still needed for code the native backend does not lower yet
   (floats, tensors, GPU). In mindc 0.10.4 the `--backend` flag defaults to
-  `native`, so pass `--backend mlir` when you need the MLIR backend.
+  `native` on x86-64 Linux, so pass `--backend mlir` when you need the MLIR
+  backend. On any other host, always pass `--backend mlir`.
 - **Latest LLVM: 23.1.3.** The build is pinned and verified (`versions.txt`).
   Its release assets appear on the
   [releases page](https://github.com/star-ga/mlir-tools/releases) once the
   *Build MLIR Tools* workflow has run for `23.1.3`. Until then the newest
   published release is `llvmorg-21.1.8`.
-- **MIND CI tests the MLIR backend with LLVM 20**, from Ubuntu's
-  `mlir-20-tools` package. A move to LLVM 22/23 is in progress and has not
-  landed in MIND CI yet. Until it does, LLVM 23 builds of these tools have not
-  been tested against MIND. That is why `20.1.8` stays pinned here.
+- **MIND CI tests the MLIR backend with LLVM 23 (latest) and LLVM 20 (oldest
+  supported)**, as of mindc 0.10.4. Both lines are pinned here: `23.1.3` and
+  `20.1.8`.
 
 ## Which tools for which mindc
 
 | mindc | Build path | What you need |
 |-------|------------|---------------|
 | 0.10.x, `--backend native` | pure-MIND native backend (x86-64 ELF) | nothing from this repository |
-| 0.10.x, `--backend mlir`, `--emit-obj`, `--emit-shared` | MLIR text, then `mlir-opt`, then `mlir-translate`, then `clang` | `mlir-opt` and `mlir-translate` from the same LLVM major as your `clang`. MIND CI uses LLVM 20 (`llvmorg-20.1.8` here). |
+| 0.10.x, `--backend mlir`, `--emit-obj`, `--emit-shared` | MLIR text, then `mlir-opt`, then `mlir-translate`, then `clang` | `mlir-opt` and `mlir-translate` from the same LLVM major as your `clang`. MIND CI tests LLVM 23 and 20 (`llvmorg-23.1.3` and `llvmorg-20.1.8` here). |
 | 0.10.x, `check`, `--emit-ir`, `--emit-mlir` | front end only | nothing: the `mindc` binary works on its own |
 
 This repository does not ship `clang`. Install it from your distribution or
@@ -46,7 +46,7 @@ returned from several exits.
 | LLVM | Why it is pinned | Source signature | Sigstore provenance |
 |------|------------------|------------------|---------------------|
 | 23.1.3 | latest LLVM release | OpenPGP, key `D574 BD5D 1D0E 9889 5E3B F900 44F2 485E 45D5 9042` | yes |
-| 20.1.8 | the LLVM major that MIND CI tests | OpenPGP, key `474E 2231 6ABF 4785 A88C 6E8E A2C7 94A9 8641 9D8A` | none published |
+| 20.1.8 | oldest LLVM major that MIND supports and tests | OpenPGP, key `474E 2231 6ABF 4785 A88C 6E8E A2C7 94A9 8641 9D8A` | none published |
 
 The 20.1.8 signature is valid, but the signing key's published expiry date is
 earlier than the signature. The script prints a note when this happens, and the
