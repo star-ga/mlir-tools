@@ -15,8 +15,8 @@ script that you can run yourself.
   `mindc build --backend native` lowers MIND straight to an x86-64 ELF with no
   MLIR, LLVM or clang involved, so it needs nothing from this repository. The
   MLIR backend is still needed for code the native backend does not lower yet
-  (floats, tensors, GPU). In mindc 0.10.x the `--backend` flag still defaults
-  to `mlir`, so pass `--backend native` explicitly.
+  (floats, tensors, GPU). In mindc 0.10.4 the `--backend` flag defaults to
+  `native`, so pass `--backend mlir` when you need the MLIR backend.
 - **Latest LLVM: 23.1.3.** The build is pinned and verified (`versions.txt`).
   Its release assets appear on the
   [releases page](https://github.com/star-ga/mlir-tools/releases) once the
@@ -32,7 +32,7 @@ script that you can run yourself.
 | mindc | Build path | What you need |
 |-------|------------|---------------|
 | 0.10.x, `--backend native` | pure-MIND native backend (x86-64 ELF) | nothing from this repository |
-| 0.10.x, `--backend mlir` (the flag's default), `--emit-obj`, `--emit-shared` | MLIR text, then `mlir-opt`, then `mlir-translate`, then `clang` | `mlir-opt` and `mlir-translate` from the same LLVM major as your `clang`. MIND CI uses LLVM 20 (`llvmorg-20.1.8` here). |
+| 0.10.x, `--backend mlir`, `--emit-obj`, `--emit-shared` | MLIR text, then `mlir-opt`, then `mlir-translate`, then `clang` | `mlir-opt` and `mlir-translate` from the same LLVM major as your `clang`. MIND CI uses LLVM 20 (`llvmorg-20.1.8` here). |
 | 0.10.x, `check`, `--emit-ir`, `--emit-mlir` | front end only | nothing: the `mindc` binary works on its own |
 
 This repository does not ship `clang`. Install it from your distribution or
